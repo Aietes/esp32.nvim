@@ -15,6 +15,7 @@ Uses [snacks.nvim](https://github.com/folke/snacks.nvim) for terminal and picker
 - 📋 Check project setup with `:ESPInfo`
 - 🛠 Quickly run reconfigure with `:ESPReconfigure`
 - ⚙️ Provides LSP configuration for ESP-IDF projects
+- 🔧 Supports extra `clangd` arguments for advanced toolchain setups
 
 ---
 
@@ -156,6 +157,7 @@ return {
 ```lua
 opts = {
   build_dir = "build.clang", -- directory for CMake builds (must match your clangd compile_commands.json)
+  clangd_args = {}, -- optional extra clangd arguments
 }
 ```
 
@@ -171,6 +173,17 @@ That configuration:
 
 - points the LSP at your configured `build_dir`
 - prefers `sdkconfig` and `CMakeLists.txt` as root markers so nested ESP-IDF projects do not attach to a parent git repository by accident
+
+If you need additional `clangd` flags for your environment, you can pass them through `clangd_args`:
+
+```lua
+opts = {
+  build_dir = "build.clang",
+  clangd_args = {
+    "--query-driver=**",
+  },
+}
+```
 
 ---
 

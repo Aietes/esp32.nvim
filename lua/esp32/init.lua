@@ -4,6 +4,7 @@ local M = {}
 local defaults = {
   build_dir = "build.clang",
   baudrate = 115200,
+  clangd_args = {},
 }
 
 M.options = vim.deepcopy(defaults)
@@ -212,17 +213,21 @@ function M.lsp_config()
     vim.notify("[ESP32] No esp-clangd found. Falling back to system clangd.", vim.log.levels.WARN)
     clangd = "clangd"
   end
+  local cmd = {
+    clangd,
+    "--compile-commands-dir=" .. M.options.build_dir,
+    "--background-index",
+    "--clang-tidy",
+    "--header-insertion=iwyu",
+    "--completion-style=detailed",
+    "--function-arg-placeholders",
+    "--fallback-style=llvm",
+  }
+
+  vim.list_extend(cmd, M.options.clangd_args or {})
+
   return {
-    cmd = {
-      clangd,
-      "--compile-commands-dir=" .. M.options.build_dir,
-      "--background-index",
-      "--clang-tidy",
-      "--header-insertion=iwyu",
-      "--completion-style=detailed",
-      "--function-arg-placeholders",
-      "--fallback-style=llvm",
-    },
+    cmd = cmd,
     -- Prefer the ESP-IDF project root and avoid falling back to a parent git
     -- repository, which breaks nested projects/monorepos.
     root_markers = { "sdkconfig", "CMakeLists.txt" },
