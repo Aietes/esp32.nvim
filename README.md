@@ -50,6 +50,11 @@ The packaged default keymaps are:
 - `<leader>Rr`: reconfigure
 - `<leader>Ri`: project info
 
+ESP32 commands open in a floating terminal, which automatically closes when the command is done. For long-running commands like `monitor` and `menuconfig`, the terminal stays open until you close it:
+
+- Press `q` to close the terminal window (`idf.py monitor` keeps running when closed with `q` and you can reattach to it later)
+- Press `Ctrl + ]` to stop the running process and close the terminal window
+
 ## 🔧 Configuration
 
 ```lua

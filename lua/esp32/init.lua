@@ -136,7 +136,7 @@ function M.command(cmd, port)
   end
   full_cmd = full_cmd .. " " .. cmd
 
-  Snacks.terminal.open(full_cmd, {
+  local terminal_opts = {
     win = {
       width = 0.6,
       height = 0.7,
@@ -144,7 +144,13 @@ function M.command(cmd, port)
       title = "Ctrl + ] to stop",
       title_pos = "center",
     },
-  })
+  }
+
+  if cmd == "monitor" then
+    Snacks.terminal.toggle(full_cmd, terminal_opts)
+  else
+    Snacks.terminal.open(full_cmd, terminal_opts)
+  end
 end
 
 --- Run idf.py build
