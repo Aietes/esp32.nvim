@@ -14,7 +14,7 @@ Uses [snacks.nvim](https://github.com/folke/snacks.nvim) for terminal and picker
 - 🔎 Pick available USB serial ports dynamically
 - 📋 Check project setup with `:ESPInfo`
 - 🛠 Quickly run reconfigure with `:ESPReconfigure`
-- ⚙️ Automatically configures `clangd` for LazyVim LSP
+- ⚙️ Provides LSP configuration for ESP-IDF projects
 
 ---
 
@@ -37,18 +37,30 @@ Install via Lazy.nvim or any other plugin manager. Via Lazy.nvim:
 }
 ```
 
-> ⚠️ **Attention:** It's critical to ensure `nvim-lspconfig` is configured to actually use the ESP-specific `clangd`. This is done in the example below by setting `opts` for `nvim-lspconfig`. _`esp32.nvim`_ provides a working LSP configuration via `lsp_config`, which can be used. If you are using a different LSP setup, make sure to adjust accordingly.
+> ⚠️ **Attention:** To get code completion and diagnostics working correctly, the LSP must be configured properly. This plugin provides the required LSP configuration through `require("esp32").lsp_config()`. You need to hook that into your Neovim LSP setup in one of the two ways below.
+
+### LazyVim
+
+If you use LazyVim, add this to your `nvim-lspconfig` spec, LazyVim will take care of the rest:
 
 ```lua
-  {
-    "neovim/nvim-lspconfig",
-    opts = function(_, opts)
-      local esp32 = require("esp32")
-      opts.servers = opts.servers or {}
-      opts.servers.clangd = esp32.lsp_config()
-      return opts
-    end,
-  },
+{
+  "neovim/nvim-lspconfig",
+  opts = function(_, opts)
+    opts.servers = opts.servers or {}
+    opts.servers.clangd = require("esp32").lsp_config()
+    return opts
+  end,
+}
+```
+
+### Plain Neovim / Other distros
+
+If you manage your LSP setup manually, include the LSP config from this plugin directly where it fits in your setup:
+
+```lua
+vim.lsp.config("clangd", require("esp32").lsp_config())
+vim.lsp.enable("clangd")
 ```
 
 To customize, simply set the `opts` as usual:
@@ -73,7 +85,7 @@ To customize, simply set the `opts` as usual:
 }
 ```
 
-Below is the default configuration:
+Below is an example Lazy.nvim configuration that includes optional keymaps:
 
 ```lua
 return {
@@ -147,6 +159,19 @@ opts = {
 }
 ```
 
+### LSP
+
+This plugin exposes the required LSP setup through:
+
+```lua
+require("esp32").lsp_config()
+```
+
+That configuration:
+
+- points the LSP at your configured `build_dir`
+- prefers `sdkconfig` and `CMakeLists.txt` as root markers so nested ESP-IDF projects do not attach to a parent git repository by accident
+
 ---
 
 ## 🛠 Commands
@@ -158,6 +183,8 @@ opts = {
 | `:ESPBuild`       | Runs a build of the project                                     |
 | `pick`            | Pick a serial port and run a command on it.                     |
 | `command`         | Run a command (uses last port if needed)                        |
+
+The plugin defines the user commands above automatically, but it does not install any keymaps unless you add them in your plugin manager config.
 
 ---
 

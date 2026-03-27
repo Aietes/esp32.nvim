@@ -1,7 +1,5 @@
 local M = {}
 
-local Snacks = require("snacks")
-
 ---@class ESP32Opts
 local defaults = {
   build_dir = "build.clang",
@@ -9,6 +7,24 @@ local defaults = {
 }
 
 M.options = vim.deepcopy(defaults)
+
+local function get_snacks()
+  return require("snacks")
+end
+
+local function make_clangd_capabilities()
+  local capabilities = vim.lsp.protocol.make_client_capabilities()
+
+  -- clangd moved from the custom offsetEncoding extension to the standard
+  -- positionEncodings capability in LSP 3.17.
+  if capabilities.general then
+    capabilities.general.positionEncodings = { "utf-16" }
+  else
+    capabilities.offsetEncoding = { "utf-16" }
+  end
+
+  return capabilities
+end
 
 function M.setup(opts)
   M.options = vim.tbl_deep_extend("force", M.options or {}, opts or {})
@@ -86,6 +102,7 @@ end
 
 --- Open a Snacks terminal for idf.py command
 function M.command(cmd, port)
+  local Snacks = get_snacks()
   local opts = M.options
   local full_cmd = "idf.py -B " .. opts.build_dir
   if port then
@@ -117,6 +134,7 @@ end, {})
 
 --- Create Snacks picker for port and run idf.py command
 function M.pick(cmd)
+  local Snacks = get_snacks()
   Snacks.picker.pick({
     prompt = "Select ESP32 port",
     ui_select = true,
@@ -149,6 +167,7 @@ end
 
 --- Run idf.py reconfigure for build.clang
 function M.reconfigure()
+  local Snacks = get_snacks()
   local build_dir = M.options.build_dir
   Snacks.terminal.open("idf.py -B " .. build_dir .. " -D IDF_TOOLCHAIN=clang reconfigure", {
     win = {
@@ -178,18 +197,10 @@ function M.lsp_config()
       "--function-arg-placeholders",
       "--fallback-style=llvm",
     },
-    root_markers = { "sdkconfig", "CMakeLists.txt", ".git" },
-    -- root_dir = function(fname)
-    --   if type(fname) == "number" then
-    --     fname = vim.api.nvim_buf_get_name(fname)
-    --   end
-    --   local util = require("lspconfig.util")
-    --   local git_root = vim.fs.dirname(vim.fs.find('.git', { path = fname, upward = true })[1])
-    --   return util.root_pattern("sdkconfig", "CMakeLists.txt")(fname) or git_root or vim.fn.getcwd()
-    -- end,
-    capabilities = {
-      offsetEncoding = { "utf-16" },
-    },
+    -- Prefer the ESP-IDF project root and avoid falling back to a parent git
+    -- repository, which breaks nested projects/monorepos.
+    root_markers = { "sdkconfig", "CMakeLists.txt" },
+    capabilities = make_clangd_capabilities(),
     init_options = {
       usePlaceholders = true,
       completeUnimported = true,
