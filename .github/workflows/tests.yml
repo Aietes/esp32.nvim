@@ -1,0 +1,30 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Neovim
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+
+      - name: Check Neovim version
+        run: nvim --version
+
+      - name: Check out mini.nvim test dependency
+        run: git clone --depth=1 https://github.com/echasnovski/mini.nvim tests/deps/mini.nvim
+
+      - name: Run test suite
+        run: nvim --headless -u NONE -c "luafile tests/init.lua"
