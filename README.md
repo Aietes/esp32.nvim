@@ -11,7 +11,7 @@ Uses [snacks.nvim](https://github.com/folke/snacks.nvim) for terminal and picker
 - 🧠 Automatically detects ESP-IDF-specific `clangd`
 - 🛠 Configures `build_dir` (`build.clang`) for IDF builds
 - 🖥️ Launch `idf.py monitor` and `idf.py flash` in floating terminals
-- 🔎 Pick available USB serial ports dynamically
+- 🔎 Pick available USB serial ports dynamically on macOS and Linux
 - 📋 Check project setup with `:ESPInfo`
 - 🛠 Quickly run reconfigure with `:ESPReconfigure`
 - ⚙️ Provides LSP configuration for ESP-IDF projects
@@ -181,8 +181,8 @@ That configuration:
 | `:ESPReconfigure` | Runs `idf.py -B build.clang -D IDF_TOOLCHAIN=clang reconfigure` |
 | `:ESPInfo`        | Shows ESP32 project setup info                                  |
 | `:ESPBuild`       | Runs a build of the project                                     |
-| `pick`            | Pick a serial port and run a command on it.                     |
-| `command`         | Run a command (uses last port if needed)                        |
+| `pick`            | Pick a serial port and run a command on it. Remembers the selected port for later commands. |
+| `command`         | Run a command, reusing the last selected port when available.   |
 
 The plugin defines the user commands above automatically, but it does not install any keymaps unless you add them in your plugin manager config.
 

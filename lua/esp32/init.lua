@@ -7,6 +7,9 @@ local defaults = {
 }
 
 M.options = vim.deepcopy(defaults)
+M.state = {
+  last_port = nil,
+}
 
 local function get_snacks()
   return require("snacks")
@@ -35,6 +38,13 @@ end
 function M.list_ports()
   local scandir = vim.uv.fs_scandir("/dev")
   local ports = {}
+  local patterns = {
+    "^cu%.",
+    "^ttyUSB%d+$",
+    "^ttyACM%d+$",
+    "^tty%.usb",
+    "^tty%.wchusbserial",
+  }
 
   if scandir then
     while true do
@@ -42,11 +52,19 @@ function M.list_ports()
       if not name then
         break
       end
-      if name:match("^cu%.") then
-        table.insert(ports, { port = "/dev/" .. name })
+
+      for _, pattern in ipairs(patterns) do
+        if name:match(pattern) then
+          table.insert(ports, { port = "/dev/" .. name })
+          break
+        end
       end
     end
   end
+
+  table.sort(ports, function(a, b)
+    return a.port < b.port
+  end)
 
   return ports
 end
@@ -72,13 +90,18 @@ function M.find_esp_clangd()
   end
 
   local latest
+  local latest_key
   while true do
     local name = vim.uv.fs_scandir_next(scandir)
     if not name then
       break
     end
     if name:match("^esp%-.+") then
-      latest = base .. "/" .. name .. "/esp-clang/bin/clangd"
+      local candidate = base .. "/" .. name .. "/esp-clang/bin/clangd"
+      if vim.fn.executable(candidate) == 1 and (not latest_key or name > latest_key) then
+        latest = candidate
+        latest_key = name
+      end
     end
   end
 
@@ -105,8 +128,10 @@ function M.command(cmd, port)
   local Snacks = get_snacks()
   local opts = M.options
   local full_cmd = "idf.py -B " .. opts.build_dir
-  if port then
-    full_cmd = full_cmd .. " -p " .. port
+  local selected_port = port or M.state.last_port
+
+  if selected_port then
+    full_cmd = full_cmd .. " -p " .. selected_port
   end
   full_cmd = full_cmd .. " " .. cmd
 
@@ -160,6 +185,7 @@ function M.pick(cmd)
     end,
     confirm = function(picker, item)
       picker:close()
+      M.state.last_port = item.port
       M.command(cmd, item.port)
     end,
   })
