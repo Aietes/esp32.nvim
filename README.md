@@ -4,8 +4,6 @@
 Designed for a smooth ESP-IDF workflow inside Neovim and [LazyVim](https://github.com/LazyVim/LazyVim).  
 Uses [snacks.nvim](https://github.com/folke/snacks.nvim) for terminal and picker UIs.
 
----
-
 ## ✨ Features
 
 - 🧠 Automatically detects ESP-IDF-specific `clangd`
@@ -17,16 +15,12 @@ Uses [snacks.nvim](https://github.com/folke/snacks.nvim) for terminal and picker
 - ⚙️ Provides LSP configuration for ESP-IDF projects
 - 🔧 Supports extra `clangd` arguments for advanced toolchain setups
 
----
-
 ## 🚀 Requirements
 
 - [ESP-IDF](https://github.com/espressif/esp-idf) installed and initialized
 - ESP-specific `clangd` is installed via `idf_tools.py install esp-clang`
 - ESP-specific `clangd` is configured via `idf.py -B build.clang -D IDF_TOOLCHAIN=clang reconfigure` (can be done via command `:ESPReconfigure`)
 - [snacks.nvim](https://github.com/folke/snacks.nvim) (automatically installed via LazyVim dependencies)
-
----
 
 ## 📦 Installation (with Lazy.nvim)
 
@@ -35,6 +29,50 @@ Install via Lazy.nvim or any other plugin manager. Via Lazy.nvim:
 ```lua
 {
   "Aietes/esp32.nvim",
+}
+```
+
+When installed through Lazy.nvim, the plugin ships a packaged `lazy.lua` spec. That means Lazy.nvim users automatically get:
+
+- the `snacks.nvim` dependency
+- the default `build_dir = "build.clang"` option
+- the default ESP32 keymaps
+
+The packaged default keymaps are:
+
+- `<leader>Rb`: build
+- `<leader>RM`: pick and monitor
+- `<leader>Rm`: monitor
+- `<leader>RF`: pick and flash
+- `<leader>Rf`: flash
+- `<leader>Rc`: menuconfig
+- `<leader>RC`: clean
+- `<leader>Rr`: reconfigure
+- `<leader>Ri`: project info
+
+## 🔧 Configuration
+
+```lua
+opts = {
+  build_dir = "build.clang", -- directory for CMake builds (must match your clangd compile_commands.json)
+  clangd_args = {}, -- optional extra clangd arguments
+}
+```
+
+To customize the packaged defaults, override them in your own spec:
+
+```lua
+{
+  "Aietes/esp32.nvim",
+  opts = {
+    build_dir = "build.custom",
+    clangd_args = {
+      "--query-driver=**",
+    },
+  },
+  keys = {
+    { "<leader>em", function() require("esp32").pick("monitor") end, desc = "ESP32: Pick & Monitor" },
+  },
 }
 ```
 
@@ -64,103 +102,6 @@ vim.lsp.config("clangd", require("esp32").lsp_config())
 vim.lsp.enable("clangd")
 ```
 
-To customize, simply set the `opts` as usual:
-
-```lua
-{
-  "Aietes/esp32.nvim",
-  opts = {
-    -- custom build dir
-    build_dir = "build.custom",
-  },
-  keys = {
-  {
-      -- some other keymap
-   "<leader>em",
-   function()
-    require("esp32").pick("monitor")
-   end,
-   desc = "ESP32: Pick & Monitor",
-  },
-  }
-}
-```
-
-Below is an example Lazy.nvim configuration that includes optional keymaps:
-
-```lua
-return {
- "Aietes/esp32.nvim",
- name = "esp32.nvim",
- dependencies = {
-  "folke/snacks.nvim",
- },
- opts = {
-  build_dir = "build.clang",
- },
- config = function(_, opts)
-  require("esp32").setup(opts)
- end,
- keys = {
-  {
-   "<leader>RM",
-   function()
-    require("esp32").pick("monitor")
-   end,
-   desc = "ESP32: Pick & Monitor",
-  },
-  {
-   "<leader>Rm",
-   function()
-    require("esp32").command("monitor")
-   end,
-   desc = "ESP32: Monitor",
-  },
-  {
-   "<leader>RF",
-   function()
-    require("esp32").pick("flash")
-   end,
-   desc = "ESP32: Pick & Flash",
-  },
-  {
-   "<leader>Rf",
-   function()
-    require("esp32").command("flash")
-   end,
-   desc = "ESP32: Flash",
-  },
-  {
-   "<leader>Rc",
-   function()
-    require("esp32").command("menuconfig")
-   end,
-   desc = "ESP32: Configure",
-  },
-  {
-   "<leader>RC",
-   function()
-    require("esp32").command("clean")
-   end,
-   desc = "ESP32: Clean",
-  },
-  { "<leader>Rr", ":ESPReconfigure<CR>", desc = "ESP32: Reconfigure project" },
-  { "<leader>Ri", ":ESPInfo<CR>", desc = "ESP32: Project Info" },
- },
-}
-```
-
----
-
-## 🔧 Configuration
-
-```lua
-opts = {
-  build_dir = "build.clang", -- directory for CMake builds (must match your clangd compile_commands.json)
-  clangd_args = {}, -- optional extra clangd arguments
-}
-```
-
 ### LSP
 
 This plugin exposes the required LSP setup through:
@@ -185,19 +126,24 @@ opts = {
 }
 ```
 
----
-
 ## 🛠 Commands
 
-| Command           | Description                                                     |
-| :---------------- | :-------------------------------------------------------------- |
-| `:ESPReconfigure` | Runs `idf.py -B build.clang -D IDF_TOOLCHAIN=clang reconfigure` |
-| `:ESPInfo`        | Shows ESP32 project setup info                                  |
-| `:ESPBuild`       | Runs a build of the project                                     |
+| Command           | Description                                                                                 |
+| :---------------- | :------------------------------------------------------------------------------------------ |
+| `:ESPReconfigure` | Runs `idf.py -B build.clang -D IDF_TOOLCHAIN=clang reconfigure`                             |
+| `:ESPInfo`        | Shows ESP32 project setup info                                                              |
+| `:ESPBuild`       | Runs a build of the project                                                                 |
 | `pick`            | Pick a serial port and run a command on it. Remembers the selected port for later commands. |
-| `command`         | Run a command, reusing the last selected port when available.   |
+| `command`         | Run a command, reusing the last selected port when available.                               |
 
-The plugin defines the user commands above automatically, but it does not install any keymaps unless you add them in your plugin manager config.
+The plugin defines the user commands above automatically. When installed through Lazy.nvim, the packaged `lazy.lua` also provides the default keymaps listed above.
+
+## 📋 Notes
+
+- This plugin does **not** install ESP-IDF automatically, see the recommended setup [below](#️-recommended-esp-idf-setup)
+- You must either:
+  - Use a Nix flake (recommended, see [below](#️-nix-flake-setup))
+  - Or manually source `~/esp/esp-idf/export.sh` before launching Neovim
 
 ---
 
@@ -232,19 +178,7 @@ idf.py -B build.clang build
 idf.py -B build.clang flash
 ```
 
----
-
-## 📋 Notes
-
-- This plugin does **not** install ESP-IDF automatically.
-- You must either:
-  - Use a Nix flake (recommended, see below)
-  - Or manually source `~/esp/esp-idf/export.sh` before launching Neovim
-- [direnv](https://direnv.net/) or a `flake.nix` is recommended for auto-loading ESP-IDF environments
-
----
-
-## ❄️ Nix Flake Setup (Recommended)
+## ❄️ Nix Flake Setup
 
 Using [nix](https://github.com/DeterminateSystems/nix-installer) is highly recommended. Use this `flake.nix` to create a reproducible ESP32 development environment:
 
@@ -282,8 +216,6 @@ direnv allow
 This will automatically load the environment when you enter the directory.
 ✅ Now Neovim and the plugin will inherit the full ESP-IDF toolchain environment.
 
----
-
 ## 📜 License
 
-MIT License © 2024 [Aietes](https://github.com/Aietes)
+MIT License © 2026 [Aietes](https://github.com/Aietes)
