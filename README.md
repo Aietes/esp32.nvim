@@ -1,7 +1,12 @@
-# esp32.nvim
+[![Version](https://img.shields.io/github/v/tag/Aietes/esp32.nvim?style=for-the-badge&label=version&sort=semver)](https://github.com/Aietes/esp32.nvim/tags)
+[![Tests](https://img.shields.io/github/actions/workflow/status/Aietes/esp32.nvim/tests.yml?branch=main&style=for-the-badge&label=tests)](https://github.com/Aietes/esp32.nvim/actions/workflows/tests.yml)
+[![Last Commit](https://img.shields.io/github/last-commit/Aietes/esp32.nvim?style=for-the-badge)](https://github.com/Aietes/esp32.nvim/commits/main)
+[![Neovim](https://img.shields.io/badge/Neovim-0.10%2B-57A143?style=for-the-badge&logo=neovim&logoColor=white)](https://neovim.io/)
+[![License](https://img.shields.io/github/license/Aietes/esp32.nvim?style=for-the-badge)](https://github.com/Aietes/esp32.nvim/blob/main/LICENSE)
 
-**ESP32 development helper for Neovim.**  
-Designed for a smooth ESP-IDF workflow inside Neovim and [LazyVim](https://github.com/LazyVim/LazyVim).  
+**ESP32.nvim** makes working with ESP-IDF projects in Neovim a breeze.
+
+Designed for a smooth ESP-IDF workflow inside Neovim and [LazyVim](https://github.com/LazyVim/LazyVim).
 Uses [snacks.nvim](https://github.com/folke/snacks.nvim) for terminal and picker UIs.
 
 ## ✨ Features
