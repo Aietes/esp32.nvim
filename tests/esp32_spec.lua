@@ -6,6 +6,7 @@ local T = MiniTest.new_set()
 local original_notify = vim.notify
 local original_home = vim.env.HOME
 local original_idf_path = vim.env.IDF_PATH
+local original_idf_python_env_path = vim.env.IDF_PYTHON_ENV_PATH
 local original_fn = {}
 local original_uv = {}
 local notifications = {}
@@ -70,6 +71,7 @@ local function reset_plugin_state(esp32)
     build_dir = "build.clang",
     baudrate = 115200,
     clangd_args = {},
+    idf_cmd = nil,
   })
   esp32.state = {
     last_port = nil,
@@ -88,6 +90,7 @@ local function prepare_case()
   end
   vim.env.HOME = original_home
   vim.env.IDF_PATH = nil
+  vim.env.IDF_PYTHON_ENV_PATH = nil
   vim.fn.executable = function()
     return 0
   end
@@ -121,6 +124,7 @@ T.hooks = {
     vim.notify = original_notify
     vim.env.HOME = original_home
     vim.env.IDF_PATH = original_idf_path
+    vim.env.IDF_PYTHON_ENV_PATH = original_idf_python_env_path
     vim.fn.executable = original_fn.executable
     vim.fn.system = original_fn.system
     vim.fn.exepath = original_fn.exepath
@@ -280,6 +284,113 @@ T["ensure_compile_commands() warns when compile_commands.json is missing"] = fun
   expect.equality(notifications[1].level, vim.log.levels.WARN)
 end
 
+T["make_idf_command() uses the EIM Python environment when idf.py is a shell function"] = function()
+  prepare_case()
+  vim.env.IDF_PATH = "/home/test/.espressif/v6.0.1/esp-idf/v6.0.1/esp-idf"
+  vim.env.IDF_PYTHON_ENV_PATH = "/home/test/.espressif/tools/python/v6.0.1/venv"
+
+  vim.fn.executable = function(path)
+    if path == "idf.py" then
+      return 0
+    end
+
+    return path == "/home/test/.espressif/tools/python/v6.0.1/venv/bin/python" and 1 or 0
+  end
+
+  vim.fn.filereadable = function(path)
+    return path == "/home/test/.espressif/v6.0.1/esp-idf/v6.0.1/esp-idf/tools/idf.py" and 1 or 0
+  end
+
+  local esp32 = load_module()
+  reset_plugin_state(esp32)
+  esp32.options.build_dir = "build clang"
+
+  expect.equality(
+    esp32.make_idf_command("monitor", "/dev/ttyUSB0"),
+    "'/home/test/.espressif/tools/python/v6.0.1/venv/bin/python' "
+      .. "'/home/test/.espressif/v6.0.1/esp-idf/v6.0.1/esp-idf/tools/idf.py' "
+      .. "-B 'build clang' -p '/dev/ttyUSB0' monitor"
+  )
+end
+
+T["resolve_idf_cmd() does not guess a Python interpreter without IDF_PYTHON_ENV_PATH"] = function()
+  prepare_case()
+  vim.env.IDF_PATH = "/home/test/.espressif/v6.0.1/esp-idf/v6.0.1/esp-idf"
+
+  vim.fn.executable = function(path)
+    return (path == "python3" or path == "python") and 1 or 0
+  end
+
+  vim.fn.filereadable = function(path)
+    return path == "/home/test/.espressif/v6.0.1/esp-idf/v6.0.1/esp-idf/tools/idf.py" and 1 or 0
+  end
+
+  local esp32 = load_module()
+  reset_plugin_state(esp32)
+
+  expect.equality(esp32.resolve_idf_cmd(), "idf.py")
+end
+
+T["make_idf_command() respects a configured idf_cmd"] = function()
+  prepare_case()
+  local esp32 = load_module()
+  reset_plugin_state(esp32)
+  esp32.setup({
+    idf_cmd = "/usr/local/bin/idf.py-wrapper",
+  })
+
+  expect.equality(
+    esp32.make_idf_command("build"),
+    "/usr/local/bin/idf.py-wrapper -B 'build.clang' build"
+  )
+end
+
+T["resolve_idf_cmd() ignores an empty idf_cmd override"] = function()
+  prepare_case()
+  vim.fn.executable = function(path)
+    return path == "idf.py" and 1 or 0
+  end
+
+  local esp32 = load_module()
+  reset_plugin_state(esp32)
+  esp32.setup({
+    idf_cmd = "",
+  })
+
+  expect.equality(esp32.resolve_idf_cmd(), "idf.py")
+end
+
+T["info() reports idf.py available when an EIM Python command can be resolved"] = function()
+  prepare_case()
+  vim.env.IDF_PATH = "/home/test/.espressif/v6.0.1/esp-idf/v6.0.1/esp-idf"
+  vim.env.IDF_PYTHON_ENV_PATH = "/home/test/.espressif/tools/python/v6.0.1/venv"
+
+  vim.fn.executable = function(path)
+    if path == "/home/test/.espressif/tools/python/v6.0.1/venv/bin/python" then
+      return 1
+    end
+
+    return 0
+  end
+
+  vim.fn.filereadable = function(path)
+    return path == "/home/test/.espressif/v6.0.1/esp-idf/v6.0.1/esp-idf/tools/idf.py" and 1 or 0
+  end
+
+  local esp32 = load_module()
+  reset_plugin_state(esp32)
+  esp32.info()
+
+  expect.equality(#notifications, 1)
+  expect.equality(notifications[1].message, table.concat({
+    "✗ ESP-specific clangd missing",
+    "✗ compile_commands.json missing",
+    "✓ idf.py",
+    "✗ llvm-ar",
+    "IDF_PATH: /home/test/.espressif/v6.0.1/esp-idf/v6.0.1/esp-idf",
+  }, "\n"))
+end
+
 T["info() reports project and environment status"] = function()
   prepare_case()
   local esp32_path = "/opt/espressif/clangd"
@@ -319,6 +430,26 @@ T["info() reports project and environment status"] = function()
     "✓ idf.py",
     "✓ llvm-ar",
     "IDF_PATH: /opt/esp-idf",
+  }, "\n"))
+end
+
+T["info() suggests EIM and manual activation when ESP-IDF is not active"] = function()
+  prepare_case()
+  local esp32 = load_module()
+  reset_plugin_state(esp32)
+  esp32.info()
+
+  expect.equality(#notifications, 1)
+  expect.equality(notifications[1].level, vim.log.levels.INFO)
+  expect.equality(notifications[1].message, table.concat({
+    "✗ ESP-specific clangd missing",
+    "✗ compile_commands.json missing",
+    "✗ idf.py",
+    "✗ llvm-ar",
+    "IDF_PATH: ✗ not set",
+    "⚠️ Source an ESP-IDF environment before launching Neovim:",
+    "source ~/.espressif/tools/activate_idf_<version>.sh",
+    "or source ~/esp/esp-idf/export.sh",
   }, "\n"))
 end
 
@@ -362,9 +493,9 @@ T["command() reuses the last selected port and toggles monitor sessions"] = func
   esp32.command("flash")
 
   expect.equality(calls[1].method, "toggle")
-  expect.equality(calls[1].cmd, "idf.py -B build.clang -p /dev/ttyUSB9 monitor")
+  expect.equality(calls[1].cmd, "idf.py -B 'build.clang' -p '/dev/ttyUSB9' monitor")
   expect.equality(calls[2].method, "open")
-  expect.equality(calls[2].cmd, "idf.py -B build.clang -p /dev/ttyUSB9 flash")
+  expect.equality(calls[2].cmd, "idf.py -B 'build.clang' -p '/dev/ttyUSB9' flash")
 end
 
 T["pick() stores the selected port and runs the command with it"] = function()
@@ -398,7 +529,7 @@ T["pick() stores the selected port and runs the command with it"] = function()
 
   expect.equality(esp32.state.last_port, "/dev/ttyACM0")
   expect.equality(calls[1].method, "toggle")
-  expect.equality(calls[1].cmd, "idf.py -B build.clang -p /dev/ttyACM0 monitor")
+  expect.equality(calls[1].cmd, "idf.py -B 'build.clang' -p '/dev/ttyACM0' monitor")
 end
 
 T["lazy.lua packaged spec exposes expected defaults"] = function()

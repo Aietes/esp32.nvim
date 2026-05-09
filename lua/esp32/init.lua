@@ -5,6 +5,7 @@ local defaults = {
   build_dir = "build.clang",
   baudrate = 115200,
   clangd_args = {},
+  idf_cmd = nil,
 }
 
 M.options = vim.deepcopy(defaults)
@@ -28,6 +29,22 @@ local function make_clangd_capabilities()
   end
 
   return capabilities
+end
+
+local function get_home()
+  return vim.env.HOME or vim.fn.expand("~")
+end
+
+local function join_path(...)
+  return table.concat({ ... }, "/")
+end
+
+local function shellescape(value)
+  return vim.fn.shellescape(tostring(value))
+end
+
+local function executable_path(path)
+  return path and vim.fn.executable(path) == 1
 end
 
 function M.setup(opts)
@@ -83,8 +100,7 @@ function M.find_esp_clangd()
     end
   end
 
-  local home = vim.env.HOME or vim.fn.expand("~")
-  local base = home .. "/.espressif/tools/esp-clang"
+  local base = get_home() .. "/.espressif/tools/esp-clang"
   local scandir = vim.uv.fs_scandir(base)
   if not scandir then
     return nil
@@ -109,6 +125,43 @@ function M.find_esp_clangd()
   return latest
 end
 
+--- Resolve a command prefix that can run idf.py
+function M.resolve_idf_cmd()
+  if type(M.options.idf_cmd) == "string" and M.options.idf_cmd ~= "" then
+    return M.options.idf_cmd
+  end
+
+  if executable_path("idf.py") then
+    return "idf.py"
+  end
+
+  if vim.env.IDF_PATH then
+    local idf_py = join_path(vim.env.IDF_PATH, "tools", "idf.py")
+    if vim.fn.filereadable(idf_py) == 1 then
+      if vim.env.IDF_PYTHON_ENV_PATH then
+        local venv_python = join_path(vim.env.IDF_PYTHON_ENV_PATH, "bin", "python")
+        if executable_path(venv_python) then
+          return shellescape(venv_python) .. " " .. shellescape(idf_py)
+        end
+      end
+    end
+  end
+
+  return "idf.py"
+end
+
+--- Create an idf.py command line
+function M.make_idf_command(cmd, port)
+  local full_cmd = M.resolve_idf_cmd() .. " -B " .. shellescape(M.options.build_dir)
+  local selected_port = port or M.state.last_port
+
+  if selected_port then
+    full_cmd = full_cmd .. " -p " .. shellescape(selected_port)
+  end
+
+  return full_cmd .. " " .. cmd
+end
+
 --- Ensure compile_commands.json exists
 function M.ensure_compile_commands()
   local path = M.options.build_dir .. "/compile_commands.json"
@@ -127,14 +180,7 @@ end
 --- Open a Snacks terminal for idf.py command
 function M.command(cmd, port)
   local Snacks = get_snacks()
-  local opts = M.options
-  local full_cmd = "idf.py -B " .. opts.build_dir
-  local selected_port = port or M.state.last_port
-
-  if selected_port then
-    full_cmd = full_cmd .. " -p " .. selected_port
-  end
-  full_cmd = full_cmd .. " " .. cmd
+  local full_cmd = M.make_idf_command(cmd, port)
 
   local terminal_opts = {
     win = {
@@ -155,7 +201,6 @@ end
 
 --- Run idf.py build
 function M.build()
-  local build_dir = M.options.build_dir
   M.command("build")
 end
 
@@ -201,8 +246,7 @@ end
 --- Run idf.py reconfigure for build.clang
 function M.reconfigure()
   local Snacks = get_snacks()
-  local build_dir = M.options.build_dir
-  Snacks.terminal.open("idf.py -B " .. build_dir .. " -D IDF_TOOLCHAIN=clang reconfigure", {
+  Snacks.terminal.open(M.make_idf_command("-D IDF_TOOLCHAIN=clang reconfigure"), {
     win = {
       width = 0.5,
       height = 0.4,
@@ -271,12 +315,15 @@ function M.info()
     return vim.fn.executable(bin) == 1 and "✓" or "✗"
   end
 
-  table.insert(messages, check_bin("idf.py") .. " idf.py")
+  local has_idf_cmd = M.resolve_idf_cmd() ~= "idf.py" or check_bin("idf.py") == "✓"
+  table.insert(messages, (has_idf_cmd and "✓" or "✗") .. " idf.py")
   table.insert(messages, check_bin("llvm-ar") .. " llvm-ar")
   table.insert(messages, "IDF_PATH: " .. (vim.env.IDF_PATH or "✗ not set"))
 
   if vim.env.IDF_PATH == nil then
-    table.insert(messages, "⚠️ You may need to run: source ~/esp/esp-idf/export.sh")
+    table.insert(messages, "⚠️ Source an ESP-IDF environment before launching Neovim:")
+    table.insert(messages, "source ~/.espressif/tools/activate_idf_<version>.sh")
+    table.insert(messages, "or source ~/esp/esp-idf/export.sh")
   end
 
   vim.notify(table.concat(messages, "\n"), vim.log.levels.INFO)
