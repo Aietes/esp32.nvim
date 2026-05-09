@@ -22,8 +22,8 @@ Uses [snacks.nvim](https://github.com/folke/snacks.nvim) for terminal and picker
 
 ## 🚀 Requirements
 
-- [ESP-IDF](https://github.com/espressif/esp-idf) installed and initialized
-- ESP-specific `clangd` is installed via `idf_tools.py install esp-clang`
+- [ESP-IDF](https://github.com/espressif/esp-idf) installed and initialized. The recommended upstream setup is now [ESP-IDF Installation Manager](https://docs.espressif.com/projects/idf-im-ui/en/latest/).
+- ESP-specific `clangd` is installed. With ESP-IDF Installation Manager, include `esp-clang` in the selected tools, or run `idf_tools.py install esp-clang` from an activated ESP-IDF shell.
 - ESP-specific `clangd` is configured via `idf.py -B build.clang -D IDF_TOOLCHAIN=clang reconfigure` (can be done via command `:ESPReconfigure`)
 - [snacks.nvim](https://github.com/folke/snacks.nvim) (automatically installed via LazyVim dependencies)
 
@@ -66,6 +66,7 @@ ESP32 commands open in a floating terminal, which automatically closes when the 
 opts = {
   build_dir = "build.clang", -- directory for CMake builds (must match your clangd compile_commands.json)
   clangd_args = {}, -- optional extra clangd arguments
+  idf_cmd = nil, -- optional idf.py command override
 }
 ```
 
@@ -136,11 +137,27 @@ opts = {
 }
 ```
 
+### ESP-IDF Command Resolution
+
+By default, ESP32.nvim runs `idf.py` from the active ESP-IDF environment. If `idf.py` is not an executable on `PATH`, the plugin can also use an activated EIM environment by running:
+
+```bash
+$IDF_PYTHON_ENV_PATH/bin/python $IDF_PATH/tools/idf.py
+```
+
+This handles EIM shells where `idf.py` is provided as a shell function instead of a standalone executable. If your setup needs a custom wrapper, configure `idf_cmd`:
+
+```lua
+opts = {
+  idf_cmd = "/path/to/idf.py-wrapper",
+}
+```
+
 ## 🛠 Commands
 
 | Command           | Description                                                                                 |
 | :---------------- | :------------------------------------------------------------------------------------------ |
-| `:ESPReconfigure` | Runs `idf.py -B build.clang -D IDF_TOOLCHAIN=clang reconfigure`                             |
+| `:ESPReconfigure` | Runs ESP-IDF reconfigure with `-B build.clang -D IDF_TOOLCHAIN=clang`                       |
 | `:ESPInfo`        | Shows ESP32 project setup info                                                              |
 | `:ESPBuild`       | Runs a build of the project                                                                 |
 | `pick`            | Pick a serial port and run a command on it. Remembers the selected port for later commands. |
@@ -153,23 +170,35 @@ The plugin defines the user commands above automatically. When installed through
 - This plugin does **not** install ESP-IDF automatically, see the recommended setup [below](#️-recommended-esp-idf-setup)
 - You must either:
   - Use a Nix flake (recommended, see [below](#️-nix-flake-setup))
-  - Or manually source `~/esp/esp-idf/export.sh` before launching Neovim
+  - Or manually source an ESP-IDF environment before launching Neovim
 
 ---
 
 ## ⚙️ Recommended ESP-IDF Setup
 
-Clone and install ESP-IDF:
+Espressif now recommends ESP-IDF Installation Manager (EIM) for new setups. On macOS:
 
 ```bash
-mkdir -p ~/esp
-cd ~/esp
-git clone --recursive https://github.com/espressif/esp-idf.git
-cd esp-idf
-./install.sh esp32c3
+brew tap espressif/eim
+brew install eim
+eim install -i v5.5 --idf-tools=esp-clang
 ```
 
-Install the Espressif-specific `clangd`:
+On Linux, use the package source recommended by Espressif for your distribution, or install EIM with Homebrew:
+
+```bash
+brew tap espressif/eim
+brew install eim
+eim install -i v5.5 --idf-tools=esp-clang
+```
+
+After installation, activate the generated ESP-IDF environment before launching Neovim. EIM creates a per-version activation script under `~/.espressif/tools`:
+
+```bash
+source ~/.espressif/tools/activate_idf_v5.5.sh
+```
+
+Then make sure the Espressif-specific `clangd` is installed. If you did not select `esp-clang` during the EIM install, run:
 
 ```bash
 idf_tools.py install esp-clang
@@ -187,6 +216,21 @@ From now on, **always** build and flash using:
 idf.py -B build.clang build
 idf.py -B build.clang flash
 ```
+
+### Manual ESP-IDF Clone
+
+If you prefer the classic manual ESP-IDF clone, that still works:
+
+```bash
+mkdir -p ~/esp
+cd ~/esp
+git clone --recursive https://github.com/espressif/esp-idf.git
+cd esp-idf
+./install.sh esp32c3
+source ~/esp/esp-idf/export.sh
+```
+
+Then follow the same `esp-clang` and `build.clang` steps above.
 
 ## ❄️ Nix Flake Setup
 
@@ -208,7 +252,7 @@ Using [nix](https://github.com/DeterminateSystems/nix-installer) is highly recom
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [ cmake ninja dfu-util python3 ccache ];
           shellHook = ''
-            . $HOME/esp/esp-idf/export.sh
+            . $HOME/.espressif/tools/activate_idf_v5.5.sh
           '';
         };
       });
