@@ -169,8 +169,8 @@ The plugin defines the user commands above automatically. When installed through
 
 - This plugin does **not** install ESP-IDF automatically, see the recommended setup [below](#️-recommended-esp-idf-setup)
 - You must either:
-  - Use a Nix flake (recommended, see [below](#️-nix-flake-setup))
-  - Or manually source an ESP-IDF environment before launching Neovim
+  - Source an ESP-IDF environment before launching Neovim
+  - Or use a project-local Nix/direnv shell to source that environment for you
 
 ---
 
@@ -232,13 +232,15 @@ source ~/esp/esp-idf/export.sh
 
 Then follow the same `esp-clang` and `build.clang` steps above.
 
-## ❄️ Nix Flake Setup
+## ❄️ Optional Nix/Direnv Activation
 
-Using [nix](https://github.com/DeterminateSystems/nix-installer) is highly recommended. Use this `flake.nix` to create a reproducible ESP32 development environment:
+EIM is the recommended way to install and manage ESP-IDF. If your project already uses [nix](https://github.com/DeterminateSystems/nix-installer) and [direnv](https://direnv.net/), you can use a flake to activate an existing EIM or manual ESP-IDF install when you enter the project.
+
+This does **not** install ESP-IDF with Nix; it only makes Neovim inherit the same ESP-IDF environment every time the project shell loads.
 
 ```nix
 {
-  description = "Development ESP32 C3 with ESP-IDF";
+  description = "ESP-IDF activation shell";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -247,12 +249,23 @@ Using [nix](https://github.com/DeterminateSystems/nix-installer) is highly recom
 
   outputs = { self, nixpkgs, flake-utils }:
     flake-utils.lib.eachDefaultSystem (system:
-      let pkgs = nixpkgs.legacyPackages.${system};
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+        idfVersion = "v5.5";
+        eimActivation = "$HOME/.espressif/tools/activate_idf_${idfVersion}.sh";
+        manualActivation = "$HOME/esp/esp-idf/export.sh";
       in {
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [ cmake ninja dfu-util python3 ccache ];
           shellHook = ''
-            . $HOME/.espressif/tools/activate_idf_v5.5.sh
+            if [ -f "${eimActivation}" ]; then
+              . "${eimActivation}"
+            elif [ -f "${manualActivation}" ]; then
+              . "${manualActivation}"
+            else
+              echo "ESP-IDF activation script not found." >&2
+              echo "Run: eim install -i ${idfVersion} --idf-tools=esp-clang" >&2
+            fi
           '';
         };
       });
@@ -267,7 +280,7 @@ echo 'use flake' > .envrc
 direnv allow
 ```
 
-This will automatically load the environment when you enter the directory.
+This will automatically activate the existing ESP-IDF environment when you enter the directory.
 ✅ Now Neovim and the plugin will inherit the full ESP-IDF toolchain environment.
 
 ## 📜 License
