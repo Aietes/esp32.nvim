@@ -63,7 +63,7 @@ For native `vim.pack` and other plugin managers, see
 
 ### 2. Connect the LSP
 
-> **Attention:** Installing ESP32.nvim does not configure clangd automatically.
+> ⚠️ **Attention:** Installing ESP32.nvim does not configure clangd automatically.
 > Complete the LSP setup below to enable completion, diagnostics, hover, and
 > go-to-definition.
 
