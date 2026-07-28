@@ -103,7 +103,6 @@ end
 
 function M.setup(opts)
   M.options = vim.tbl_deep_extend("force", M.options or {}, opts or {})
-  M.ensure_clangd()
 end
 
 --- List available cu.* serial ports
@@ -519,13 +518,6 @@ vim.api.nvim_create_autocmd("LspAttach", {
   end,
 })
 
---- Ensure esp-clangd exists and warn if not
-function M.ensure_clangd()
-  if not M.find_esp_clangd() then
-    vim.notify("[ESP32] ⚠️ ESP-specific clangd not found. LSP may not work properly.", vim.log.levels.WARN)
-  end
-end
-
 --- Open a Snacks terminal for idf.py command
 function M.command(cmd, port)
   local Snacks = get_snacks()
@@ -900,9 +892,9 @@ function M.info()
   if vim.env.IDF_PATH == nil then
     table.insert(messages, "⚠️ Source an ESP-IDF environment before launching Neovim:")
     if is_windows() then
-      table.insert(messages, [[. C:\Espressif\tools\Microsoft.<version>.PowerShell_profile.ps1]])
+      table.insert(messages, [[. C:\Espressif\tools\Microsoft.vX.Y.Z.PowerShell_profile.ps1]])
     else
-      table.insert(messages, "source ~/.espressif/tools/activate_idf_<version>.sh")
+      table.insert(messages, "source ~/.espressif/tools/activate_idf_vX.Y.Z.sh")
       table.insert(messages, "or source ~/esp/esp-idf/export.sh")
     end
   end

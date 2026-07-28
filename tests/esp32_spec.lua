@@ -497,7 +497,7 @@ T["clangd_cmd() makes the compile database absolute against a root"] = function(
   expect_truthy(vim.tbl_contains(cmd, "--compile-commands-dir=/project/blink/build.clang"))
 end
 
-T["setup() merges options and warns when esp clangd is missing"] = function()
+T["setup() merges options without probing clangd eagerly"] = function()
   prepare_case()
   local esp32 = load_module()
   reset_plugin_state(esp32)
@@ -510,11 +510,7 @@ T["setup() merges options and warns when esp clangd is missing"] = function()
   expect.equality(esp32.options.build_dir, "build.test")
   expect.equality(esp32.options.baudrate, 115200)
   expect.equality(esp32.options.clangd_args, { "--query-driver=**" })
-  expect.equality(#notifications, 1)
-  expect.equality(
-    notifications[1].message,
-    "[ESP32] ⚠️ ESP-specific clangd not found. LSP may not work properly."
-  )
+  expect.equality(#notifications, 0)
 end
 
 T["ensure_compile_commands() warns when compile_commands.json is missing"] = function()
@@ -1078,7 +1074,7 @@ T["info() suggests EIM and manual activation when ESP-IDF is not active"] = func
     "✗ llvm-ar",
     "IDF_PATH: ✗ not set",
     "⚠️ Source an ESP-IDF environment before launching Neovim:",
-    "source ~/.espressif/tools/activate_idf_<version>.sh",
+    "source ~/.espressif/tools/activate_idf_vX.Y.Z.sh",
     "or source ~/esp/esp-idf/export.sh",
   }, "\n"))
 end
@@ -1107,7 +1103,7 @@ T["info() suggests the PowerShell profile on Windows when ESP-IDF is not active"
     "✗ llvm-ar",
     "IDF_PATH: ✗ not set",
     "⚠️ Source an ESP-IDF environment before launching Neovim:",
-    [[. C:\Espressif\tools\Microsoft.<version>.PowerShell_profile.ps1]],
+    [[. C:\Espressif\tools\Microsoft.vX.Y.Z.PowerShell_profile.ps1]],
   }, "\n"))
 end
 
