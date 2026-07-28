@@ -10,7 +10,37 @@ local original_idf_python_env_path = vim.env.IDF_PYTHON_ENV_PATH
 local original_idf_tools_path = vim.env.IDF_TOOLS_PATH
 local original_fn = {}
 local original_uv = {}
+local original_system = vim.system
+local original_schedule = vim.schedule
 local notifications = {}
+local system_calls = {}
+
+--- Stub vim.system() with a fixed result for the spawned command
+local function set_system_result(result)
+  vim.system = function(cmd, opts, on_exit)
+    table.insert(system_calls, { cmd = cmd, opts = opts })
+    on_exit(result)
+    return { wait = function() return result end }
+  end
+end
+
+--- Run fn with vim.schedule() applied inline.
+---
+--- The async target lookup defers its callback off the libuv thread, and
+--- driving the real event loop from inside a case stops MiniTest from running
+--- the remaining ones, so collapse the deferral instead of waiting on it.
+local function run_scheduled(fn)
+  vim.schedule = function(callback)
+    callback()
+  end
+
+  local ok, err = pcall(fn)
+  vim.schedule = original_schedule
+
+  if not ok then
+    error(err)
+  end
+end
 
 local function restore_command(name)
   pcall(vim.api.nvim_del_user_command, name)
@@ -20,6 +50,7 @@ local function reset_module()
   restore_command("ESPBuild")
   restore_command("ESPReconfigure")
   restore_command("ESPInfo")
+  restore_command("ESPSetTarget")
   package.loaded["esp32"] = nil
   package.loaded["snacks"] = nil
 end
@@ -86,6 +117,7 @@ end
 local function prepare_case()
   reset_module()
   notifications = {}
+  system_calls = {}
   vim.notify = function(message, level)
     table.insert(notifications, { message = message, level = level })
   end
@@ -109,6 +141,7 @@ local function prepare_case()
   vim.fn.expand = function()
     return "/home/test"
   end
+  set_system_result({ code = 0, stdout = "", stderr = "" })
   vim.fn.readfile = function()
     return {}
   end
@@ -161,6 +194,8 @@ T.hooks = {
     vim.fn.readfile = original_fn.readfile
     vim.uv.fs_scandir = original_uv.fs_scandir
     vim.uv.fs_scandir_next = original_uv.fs_scandir_next
+    vim.system = original_system
+    vim.schedule = original_schedule
   end,
 }
 
@@ -332,13 +367,59 @@ T["resolve_idf_cmd() uses the Scripts python interpreter on Windows"] = function
   local esp32 = load_module()
   reset_plugin_state(esp32)
   local cmd = esp32.resolve_idf_cmd()
+  local argv = esp32.resolve_idf_argv()
   vim.fn.has = previous_has
 
+  expect.equality(argv, {
+    "C:/Espressif/python_env/idf6.0_py3.11_env/Scripts/python.exe",
+    "C:/Espressif/frameworks/esp-idf-v6.0.2/tools/idf.py",
+  })
   expect.equality(
     cmd,
     "'C:/Espressif/python_env/idf6.0_py3.11_env/Scripts/python.exe' "
       .. "'C:/Espressif/frameworks/esp-idf-v6.0.2/tools/idf.py'"
   )
+end
+
+T["get_targets() invokes the Windows EIM Python command without a shell"] = function()
+  prepare_case()
+  local previous_has = vim.fn.has
+  vim.fn.has = function(feature)
+    if feature == "win32" then
+      return 1
+    end
+    return previous_has(feature)
+  end
+  vim.env.IDF_PATH = "C:/Program Files/Espressif/frameworks/esp-idf-v6.0.2"
+  vim.env.IDF_PYTHON_ENV_PATH = "C:/Program Files/Espressif/python_env/idf6.0_py3.11_env"
+
+  vim.fn.executable = function(path)
+    return path == "C:/Program Files/Espressif/python_env/idf6.0_py3.11_env/Scripts/python.exe" and 1 or 0
+  end
+  vim.fn.filereadable = function(path)
+    return path == "C:/Program Files/Espressif/frameworks/esp-idf-v6.0.2/tools/idf.py" and 1 or 0
+  end
+
+  local esp32 = load_module()
+  reset_plugin_state(esp32)
+  set_system_result({ code = 0, stdout = "esp32\n", stderr = "" })
+
+  local found
+  run_scheduled(function()
+    esp32.get_targets(function(items)
+      found = items
+    end)
+  end)
+
+  vim.fn.has = previous_has
+
+  expect.equality(system_calls[1].cmd, {
+    "C:/Program Files/Espressif/python_env/idf6.0_py3.11_env/Scripts/python.exe",
+    "C:/Program Files/Espressif/frameworks/esp-idf-v6.0.2/tools/idf.py",
+    "--list-targets",
+  })
+  expect.equality(system_calls[1].opts, { text = true })
+  expect.equality(found, { { text = "esp32" } })
 end
 
 T["lsp_config() uses build_dir, root markers, and appends clangd_args"] = function()
@@ -869,6 +950,19 @@ T["make_idf_command() respects a configured idf_cmd"] = function()
   )
 end
 
+T["resolve_idf_argv() supports paths with spaces and argv overrides"] = function()
+  prepare_case()
+  local esp32 = load_module()
+  reset_plugin_state(esp32)
+
+  esp32.options.idf_cmd = "C:/Program Files/Espressif/idf.py"
+  expect.equality(esp32.resolve_idf_argv(), { "C:/Program Files/Espressif/idf.py" })
+  expect.equality(esp32.resolve_idf_cmd(), "'C:/Program Files/Espressif/idf.py'")
+
+  esp32.options.idf_cmd = { "mise", "exec", "--", "idf.py" }
+  expect.equality(esp32.resolve_idf_argv(), { "mise", "exec", "--", "idf.py" })
+end
+
 T["resolve_idf_cmd() ignores an empty idf_cmd override"] = function()
   prepare_case()
   vim.fn.executable = function(path)
@@ -1027,6 +1121,7 @@ T["module load registers user commands"] = function()
   expect_truthy(commands.ESPBuild ~= nil)
   expect_truthy(commands.ESPReconfigure ~= nil)
   expect_truthy(commands.ESPInfo ~= nil)
+  expect_truthy(commands.ESPSetTarget ~= nil)
 end
 
 T["command() reuses the last selected port and toggles monitor sessions"] = function()
@@ -1094,6 +1189,202 @@ T["pick() stores the selected port and runs the command with it"] = function()
   expect.equality(esp32.state.last_port, "/dev/ttyACM0")
   expect.equality(calls[1].method, "toggle")
   expect.equality(calls[1].cmd, "idf.py -B 'build.clang' -p '/dev/ttyACM0' monitor")
+end
+
+T["parse_targets() keeps target names and drops idf.py diagnostics"] = function()
+  prepare_case()
+  local esp32 = load_module()
+  reset_plugin_state(esp32)
+
+  -- Only bare target names from the external command may reach the picker.
+  local targets = esp32.parse_targets(table.concat({
+    "nvm: version 22 is already in use",
+    "WARNING: The IDF_PYTHON_ENV_PATH is missing in environmental variables!",
+    "Setting IDF_PATH environment variable: /home/test/esp32-project/esp-idf",
+    "esp32",
+    "esp32s3",
+    "esp32c61",
+  }, "\n"))
+
+  expect.equality(#targets, 3)
+  expect.equality(targets[1].text, "esp32")
+  expect.equality(targets[2].text, "esp32s3")
+  expect.equality(targets[3].text, "esp32c61")
+end
+
+T["parse_targets() returns nil when no target survives"] = function()
+  prepare_case()
+  local esp32 = load_module()
+  reset_plugin_state(esp32)
+
+  expect.equality(esp32.parse_targets(""), nil)
+  -- A failure that merely mentions a target name is not a target list.
+  expect.equality(esp32.parse_targets("ERROR: unsupported target esp32c6 in sdkconfig"), nil)
+end
+
+T["set_target() runs set-target for the picked target"] = function()
+  prepare_case()
+  local picker_spec
+  local selected_target
+  local esp32 = load_module({
+    terminal = {
+      open = function() end,
+      toggle = function() end,
+    },
+    picker = {
+      pick = function(spec)
+        picker_spec = spec
+      end,
+      util = {
+        align = function(value)
+          return value
+        end,
+      },
+    },
+  })
+
+  reset_plugin_state(esp32)
+  esp32.change_target = function(target)
+    selected_target = target
+  end
+  set_system_result({ code = 0, stdout = "esp32\nesp32s3\n", stderr = "" })
+
+  run_scheduled(function()
+    esp32.set_target()
+  end)
+
+  expect.equality(#picker_spec.items, 2)
+
+  picker_spec.confirm({ close = function() end }, { text = "esp32s3" })
+
+  expect.equality(system_calls[1].cmd, { "idf.py", "--list-targets" })
+  expect.equality(system_calls[1].opts, { text = true })
+  expect.equality(selected_target, "esp32s3")
+end
+
+T["change_target() preserves the clang toolchain and registers its completion handler"] = function()
+  prepare_case()
+  local opened
+  local autocmd_spec
+  local terminal = { buf = 123 }
+  local esp32 = load_module({
+    terminal = {
+      open = function(cmd, opts)
+        opened = { cmd = cmd, opts = opts }
+        return terminal
+      end,
+      toggle = function() end,
+    },
+    picker = {
+      pick = function() end,
+      util = {
+        align = function(value)
+          return value
+        end,
+      },
+    },
+  })
+  reset_plugin_state(esp32)
+  esp32.state.last_port = "/dev/ttyUSB9"
+  esp32.project_root = function()
+    return "/project/blink"
+  end
+
+  local previous_create_autocmd = vim.api.nvim_create_autocmd
+  vim.api.nvim_create_autocmd = function(event, spec)
+    autocmd_spec = vim.tbl_extend("force", { event = event }, spec)
+    return 1
+  end
+
+  local started = esp32.change_target("esp32s3")
+
+  vim.api.nvim_create_autocmd = previous_create_autocmd
+
+  expect.equality(started, true)
+  expect.equality(opened.cmd, {
+    "idf.py",
+    "-C",
+    "/project/blink",
+    "-B",
+    "/project/blink/build.clang",
+    "-D",
+    "IDF_TOOLCHAIN=clang",
+    "set-target",
+    "esp32s3",
+  })
+  expect.equality(opened.opts.auto_close, false)
+  expect.equality(opened.opts.win.title, "ESP-IDF Set Target")
+  expect.equality(vim.tbl_contains(opened.cmd, "/dev/ttyUSB9"), false)
+  expect.equality(autocmd_spec.event, "TermClose")
+  expect.equality(autocmd_spec.buffer, 123)
+  expect.equality(autocmd_spec.once, true)
+  expect.equality(type(autocmd_spec.callback), "function")
+end
+
+T["complete_target_change() closes the terminal and restarts project clangd"] = function()
+  prepare_case()
+  local esp32 = load_module()
+  reset_plugin_state(esp32)
+
+  local restarted_root
+  local closed = false
+  esp32.restart_clangd = function(root)
+    restarted_root = root
+    return true
+  end
+
+  local completed = esp32.complete_target_change("/project/blink", 0, {
+    close = function()
+      closed = true
+    end,
+  })
+
+  expect.equality(completed, true)
+  expect.equality(closed, true)
+  expect.equality(restarted_root, "/project/blink")
+  expect.equality(notifications, {
+    {
+      message = "[ESP32] Target changed, restarting clangd.",
+      level = vim.log.levels.INFO,
+    },
+  })
+end
+
+T["set_target() warns and skips the picker when no targets are found"] = function()
+  prepare_case()
+  local picked = false
+  local esp32 = load_module({
+    terminal = {
+      open = function() end,
+      toggle = function() end,
+    },
+    picker = {
+      pick = function()
+        picked = true
+      end,
+      util = {
+        align = function(value)
+          return value
+        end,
+      },
+    },
+  })
+
+  reset_plugin_state(esp32)
+  -- idf.py keeps warnings and errors on stderr, so stdout holds no targets.
+  set_system_result({
+    code = 1,
+    stdout = "",
+    stderr = "WARNING: The IDF_PYTHON_ENV_PATH is missing in environmental variables!\n",
+  })
+
+  run_scheduled(function()
+    esp32.set_target()
+  end)
+
+  expect.equality(picked, false)
+  expect.equality(#notifications, 1)
+  expect_truthy(notifications[1].message:match("No targets found"))
 end
 
 T["lazy.lua packaged spec exposes expected defaults"] = function()

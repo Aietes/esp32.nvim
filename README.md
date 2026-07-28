@@ -55,6 +55,7 @@ The packaged default keymaps are:
 - `<leader>RC`: clean
 - `<leader>Rr`: reconfigure
 - `<leader>Ri`: project info
+- `<leader>Rt`: set target
 
 ESP32 commands open in a floating terminal, which automatically closes when the command is done. For long-running commands like `monitor` and `menuconfig`, the terminal stays open until you close it:
 
@@ -67,7 +68,7 @@ ESP32 commands open in a floating terminal, which automatically closes when the 
 opts = {
   build_dir = "build.clang", -- directory for CMake builds (must match your clangd compile_commands.json)
   clangd_args = {}, -- optional extra clangd arguments
-  idf_cmd = nil, -- optional idf.py command override
+  idf_cmd = nil, -- optional idf.py executable or argv override, e.g. { "mise", "exec", "--", "idf.py" }
 }
 ```
 
@@ -170,6 +171,7 @@ opts = {
 | `:ESPReconfigure` | Runs ESP-IDF reconfigure with `-B build.clang -D IDF_TOOLCHAIN=clang`                       |
 | `:ESPInfo`        | Shows ESP32 project setup info                                                              |
 | `:ESPBuild`       | Runs a build of the project                                                                 |
+| `:ESPSetTarget`   | Pick a supported chip target and run `idf.py set-target`                                    |
 | `pick`            | Pick a serial port and run a command on it. Remembers the selected port for later commands. |
 | `command`         | Run a command, reusing the last selected port when available.                               |
 

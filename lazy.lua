@@ -72,5 +72,6 @@ return {
     },
     { "<leader>Rr", ":ESPReconfigure<CR>", desc = "ESP32: Reconfigure project" },
     { "<leader>Ri", ":ESPInfo<CR>",        desc = "ESP32: Project Info" },
+    { "<leader>Rt", ":ESPSetTarget<CR>",   desc = "ESP32: Set Target" },
   },
 }
