@@ -942,11 +942,12 @@ T["terminals register the esp32_terminal style and defer window settings to it"]
   expect.equality(#opened, 4)
   for _, opts in ipairs(opened) do
     expect.equality(opts.win.style, "esp32_terminal")
-    -- Values set here would override the user's styles.esp32_terminal config.
-    expect.equality(opts.win.width, nil)
-    expect.equality(opts.win.height, nil)
-    expect.equality(opts.win.border, nil)
-    expect.equality(opts.win.position, nil)
+    expect.equality(type(opts.win.title), "string")
+    -- Anything else set here would override the user's styles.esp32_terminal
+    -- config; the title is the only call-site value on purpose.
+    local keys = vim.tbl_keys(opts.win)
+    table.sort(keys)
+    expect.equality(keys, { "style", "title" })
   end
 end
 
@@ -990,11 +991,15 @@ end
 
 T["borderless terminals show the title in the winbar instead of dropping it"] = function()
   prepare_case()
-  local opened
+  local styles = {}
   local esp32 = load_module({
+    config = {
+      style = function(name, defaults)
+        styles[name] = defaults
+      end,
+    },
     terminal = {
-      open = function(_, opts)
-        opened = opts
+      open = function()
         return { buf = 123 }
       end,
       toggle = function() end,
@@ -1020,10 +1025,14 @@ T["borderless terminals show the title in the winbar instead of dropping it"] = 
   esp32.reconfigure()
   vim.api.nvim_create_autocmd = previous_create_autocmd
 
+  local on_win = styles.esp32_terminal.on_win
+  expect.equality(type(on_win), "function")
+
   local win = vim.api.nvim_get_current_win()
   local function fake_self(floating, border)
     return {
       win = win,
+      opts = { title = "ESP-IDF Reconfigure" },
       is_floating = function()
         return floating
       end,
@@ -1036,16 +1045,16 @@ T["borderless terminals show the title in the winbar instead of dropping it"] = 
   vim.wo[win].winbar = ""
 
   -- A bordered float renders the title itself.
-  opened.win.on_win(fake_self(true, true))
+  on_win(fake_self(true, true))
   expect.equality(vim.wo[win].winbar, "")
 
   -- A borderless float cannot.
-  opened.win.on_win(fake_self(true, false))
+  on_win(fake_self(true, false))
   expect.equality(vim.wo[win].winbar, "%=ESP-IDF Reconfigure%=")
 
   -- Neither can a split, whatever its border value resolves to.
   vim.wo[win].winbar = ""
-  opened.win.on_win(fake_self(false, true))
+  on_win(fake_self(false, true))
   expect.equality(vim.wo[win].winbar, "%=ESP-IDF Reconfigure%=")
 
   vim.wo[win].winbar = ""

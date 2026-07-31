@@ -44,27 +44,19 @@ local function get_snacks()
       width = terminal_style.width or 0.6,
       height = terminal_style.height or 0.7,
       border = border,
+      -- Only a bordered float can render a title: snacks drops it when the
+      -- user opts out of borders, and splits cannot have one at all. Show
+      -- it in the winbar instead of losing it. Lives in the style rather
+      -- than at the call sites so users can replace it.
+      on_win = function(self)
+        if self.opts.title and (not self:is_floating() or not self:has_border()) then
+          vim.wo[self.win].winbar = "%=" .. self.opts.title .. "%="
+        end
+      end,
     })
   end
 
   return Snacks
-end
-
---- Window options shared by all esp32.nvim terminals
-local function terminal_win(title)
-  return {
-    style = "esp32_terminal",
-    title = title,
-    title_pos = "center",
-    -- Only a bordered float can render a title: snacks drops it when the
-    -- user opts out of borders, and splits cannot have one at all. Show it
-    -- in the winbar instead of losing it.
-    on_win = function(self)
-      if not self:is_floating() or not self:has_border() then
-        vim.wo[self.win].winbar = "%=" .. title .. "%="
-      end
-    end,
-  }
 end
 
 local function make_clangd_capabilities()
@@ -572,7 +564,7 @@ function M.command(cmd, port)
   local full_cmd = M.make_idf_command(cmd, port)
 
   local terminal_opts = {
-    win = terminal_win("Ctrl + ] to stop"),
+    win = { style = "esp32_terminal", title = "Ctrl + ] to stop" },
   }
 
   if cmd == "monitor" then
@@ -770,7 +762,7 @@ function M.change_target(target)
     M.make_idf_argv({ "-D", "IDF_TOOLCHAIN=clang", "set-target", target }, nil, { include_port = false }),
     {
       auto_close = false,
-      win = terminal_win("ESP-IDF Set Target"),
+      win = { style = "esp32_terminal", title = "ESP-IDF Set Target" },
     }
   )
 
@@ -803,7 +795,7 @@ function M.reconfigure()
 
   local terminal = Snacks.terminal.open(M.make_idf_command("-D IDF_TOOLCHAIN=clang reconfigure"), {
     auto_close = false,
-    win = terminal_win("ESP-IDF Reconfigure"),
+    win = { style = "esp32_terminal", title = "ESP-IDF Reconfigure" },
   })
 
   local bufnr = type(terminal) == "table" and terminal.buf
