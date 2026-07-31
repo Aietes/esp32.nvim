@@ -56,7 +56,7 @@ local function reset_module()
 end
 
 local function load_module(snacks)
-  package.loaded["snacks"] = snacks or {
+  snacks = snacks or {
     terminal = {
       open = function() end,
       toggle = function() end,
@@ -70,6 +70,8 @@ local function load_module(snacks)
       },
     },
   }
+  snacks.config = snacks.config or { style = function() end }
+  package.loaded["snacks"] = snacks
 
   return require("esp32")
 end
@@ -883,6 +885,170 @@ T["reconfigure() disables Snacks auto-close until its exit handler runs"] = func
   expect.equality(autocmd_spec.buffer, 123)
   expect.equality(autocmd_spec.once, true)
   expect.equality(type(autocmd_spec.callback), "function")
+end
+
+T["terminals register the esp32_terminal style and defer window settings to it"] = function()
+  prepare_case()
+  local styles = {}
+  local opened = {}
+  local esp32 = load_module({
+    config = {
+      style = function(name, defaults)
+        styles[name] = defaults
+      end,
+    },
+    terminal = {
+      open = function(_, opts)
+        table.insert(opened, opts)
+        return { buf = 123 }
+      end,
+      toggle = function(_, opts)
+        table.insert(opened, opts)
+      end,
+    },
+    picker = {
+      pick = function() end,
+      util = {
+        align = function(value)
+          return value
+        end,
+      },
+    },
+  })
+  reset_plugin_state(esp32)
+  esp32.project_root = function()
+    return "/project/blink"
+  end
+
+  local previous_create_autocmd = vim.api.nvim_create_autocmd
+  vim.api.nvim_create_autocmd = function()
+    return 1
+  end
+
+  esp32.command("build")
+  esp32.command("monitor")
+  esp32.reconfigure()
+  esp32.change_target("esp32s3")
+
+  vim.api.nvim_create_autocmd = previous_create_autocmd
+
+  -- A border is what makes the window titles render at all; snacks drops
+  -- titles on borderless floats (issue #19).
+  expect.equality(styles.esp32_terminal.border, true)
+  expect.equality(styles.esp32_terminal.width, 0.6)
+  expect.equality(styles.esp32_terminal.height, 0.7)
+  expect.equality(styles.esp32_terminal.position, "float")
+
+  expect.equality(#opened, 4)
+  for _, opts in ipairs(opened) do
+    expect.equality(opts.win.style, "esp32_terminal")
+    -- Values set here would override the user's styles.esp32_terminal config.
+    expect.equality(opts.win.width, nil)
+    expect.equality(opts.win.height, nil)
+    expect.equality(opts.win.border, nil)
+    expect.equality(opts.win.position, nil)
+  end
+end
+
+T["esp32_terminal style inherits the user's snacks terminal style"] = function()
+  prepare_case()
+  local styles = {}
+  local esp32 = load_module({
+    config = {
+      styles = {
+        terminal = { border = false, width = 0.95, position = "bottom" },
+      },
+      style = function(name, defaults)
+        styles[name] = defaults
+      end,
+    },
+    terminal = {
+      open = function()
+        return { buf = 123 }
+      end,
+      toggle = function() end,
+    },
+    picker = {
+      pick = function() end,
+      util = {
+        align = function(value)
+          return value
+        end,
+      },
+    },
+  })
+  reset_plugin_state(esp32)
+  esp32.command("build")
+
+  -- Terminal-wide user preferences win over our defaults, including a
+  -- conscious `border = false`; unset keys keep our defaults.
+  expect.equality(styles.esp32_terminal.border, false)
+  expect.equality(styles.esp32_terminal.width, 0.95)
+  expect.equality(styles.esp32_terminal.position, "bottom")
+  expect.equality(styles.esp32_terminal.height, 0.7)
+end
+
+T["borderless terminals show the title in the winbar instead of dropping it"] = function()
+  prepare_case()
+  local opened
+  local esp32 = load_module({
+    terminal = {
+      open = function(_, opts)
+        opened = opts
+        return { buf = 123 }
+      end,
+      toggle = function() end,
+    },
+    picker = {
+      pick = function() end,
+      util = {
+        align = function(value)
+          return value
+        end,
+      },
+    },
+  })
+  reset_plugin_state(esp32)
+  esp32.project_root = function()
+    return "/project/blink"
+  end
+
+  local previous_create_autocmd = vim.api.nvim_create_autocmd
+  vim.api.nvim_create_autocmd = function()
+    return 1
+  end
+  esp32.reconfigure()
+  vim.api.nvim_create_autocmd = previous_create_autocmd
+
+  local win = vim.api.nvim_get_current_win()
+  local function fake_self(floating, border)
+    return {
+      win = win,
+      is_floating = function()
+        return floating
+      end,
+      has_border = function()
+        return border
+      end,
+    }
+  end
+
+  vim.wo[win].winbar = ""
+
+  -- A bordered float renders the title itself.
+  opened.win.on_win(fake_self(true, true))
+  expect.equality(vim.wo[win].winbar, "")
+
+  -- A borderless float cannot.
+  opened.win.on_win(fake_self(true, false))
+  expect.equality(vim.wo[win].winbar, "%=ESP-IDF Reconfigure%=")
+
+  -- Neither can a split, whatever its border value resolves to.
+  vim.wo[win].winbar = ""
+  opened.win.on_win(fake_self(false, true))
+  expect.equality(vim.wo[win].winbar, "%=ESP-IDF Reconfigure%=")
+
+  vim.wo[win].winbar = ""
 end
 
 T["make_idf_command() uses the EIM Python environment when idf.py is a shell function"] = function()

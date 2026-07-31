@@ -15,8 +15,56 @@ M.state = {
   last_port = nil,
 }
 
+--- Load snacks and register the shared window style of esp32.nvim terminals
+---
+--- Size, border and position live in the style rather than at the call sites
+--- so users can adjust them through snacks: `opts.styles.esp32_terminal`.
+--- Snacks merges user values over these defaults regardless of whether
+--- registration runs before or after the user's snacks setup.
+local terminal_style_registered = false
 local function get_snacks()
-  return require("snacks")
+  local Snacks = require("snacks")
+
+  if not terminal_style_registered then
+    terminal_style_registered = true
+
+    -- Snacks' own terminal style carries no geometry or border, so any such
+    -- keys in it are terminal-wide user preferences. Our style outranks it,
+    -- so inherit them as defaults instead of shadowing them.
+    local terminal_style = (Snacks.config.styles or {}).terminal or {}
+    local border = terminal_style.border
+    if border == nil then
+      -- Only a bordered window can render its title; `true` follows
+      -- vim.o.winborder and falls back to rounded.
+      border = true
+    end
+
+    Snacks.config.style("esp32_terminal", {
+      position = terminal_style.position or "float",
+      width = terminal_style.width or 0.6,
+      height = terminal_style.height or 0.7,
+      border = border,
+    })
+  end
+
+  return Snacks
+end
+
+--- Window options shared by all esp32.nvim terminals
+local function terminal_win(title)
+  return {
+    style = "esp32_terminal",
+    title = title,
+    title_pos = "center",
+    -- Only a bordered float can render a title: snacks drops it when the
+    -- user opts out of borders, and splits cannot have one at all. Show it
+    -- in the winbar instead of losing it.
+    on_win = function(self)
+      if not self:is_floating() or not self:has_border() then
+        vim.wo[self.win].winbar = "%=" .. title .. "%="
+      end
+    end,
+  }
 end
 
 local function make_clangd_capabilities()
@@ -524,13 +572,7 @@ function M.command(cmd, port)
   local full_cmd = M.make_idf_command(cmd, port)
 
   local terminal_opts = {
-    win = {
-      width = 0.6,
-      height = 0.7,
-      border = "single",
-      title = "Ctrl + ] to stop",
-      title_pos = "center",
-    },
+    win = terminal_win("Ctrl + ] to stop"),
   }
 
   if cmd == "monitor" then
@@ -728,12 +770,7 @@ function M.change_target(target)
     M.make_idf_argv({ "-D", "IDF_TOOLCHAIN=clang", "set-target", target }, nil, { include_port = false }),
     {
       auto_close = false,
-      win = {
-        width = 0.5,
-        height = 0.4,
-        title = "ESP-IDF Set Target",
-        title_pos = "center",
-      },
+      win = terminal_win("ESP-IDF Set Target"),
     }
   )
 
@@ -766,12 +803,7 @@ function M.reconfigure()
 
   local terminal = Snacks.terminal.open(M.make_idf_command("-D IDF_TOOLCHAIN=clang reconfigure"), {
     auto_close = false,
-    win = {
-      width = 0.5,
-      height = 0.4,
-      title = "ESP-IDF Reconfigure",
-      title_pos = "center",
-    },
+    win = terminal_win("ESP-IDF Reconfigure"),
   })
 
   local bufnr = type(terminal) == "table" and terminal.buf

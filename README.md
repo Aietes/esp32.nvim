@@ -159,6 +159,37 @@ For cross-toolchain include problems, read
 [Query-driver](docs/lsp.md#query-driver) before adding a broad
 `--query-driver=**` rule.
 
+### Window appearance
+
+All esp32.nvim terminal windows (build, flash, monitor, reconfigure,
+set-target) share the `esp32_terminal`
+[snacks window style](https://github.com/folke/snacks.nvim/blob/main/docs/styles.md).
+By default they open as a float of 60% × 70% with a border that follows
+`vim.o.winborder` (rounded if unset). Size, position and border set in your
+snacks `styles.terminal` config are inherited. Adjust anything specifically
+for esp32.nvim — including any other
+[window option](https://github.com/folke/snacks.nvim/blob/main/docs/win.md) —
+in your snacks.nvim config:
+
+```lua
+{
+  "folke/snacks.nvim",
+  opts = {
+    styles = {
+      esp32_terminal = {
+        width = 0.9,
+        height = 0.5,
+        border = "double",
+        position = "bottom",
+      },
+    },
+  },
+}
+```
+
+A borderless window (`border = "none"`) cannot display a floating window
+title, so the title is shown in the winbar instead.
+
 ## Commands and keymaps
 
 The user commands are always available:
