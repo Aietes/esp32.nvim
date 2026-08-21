@@ -8,7 +8,18 @@ local original_home = vim.env.HOME
 local original_idf_path = vim.env.IDF_PATH
 local original_idf_python_env_path = vim.env.IDF_PYTHON_ENV_PATH
 local original_idf_tools_path = vim.env.IDF_TOOLS_PATH
+local original_api = {
+  nvim_buf_get_name = vim.api.nvim_buf_get_name,
+}
+local original_fs = {
+  root = vim.fs.root,
+}
 local original_fn = {}
+local original_lsp = {
+  -- Force Neovim's lazily loaded LSP module to materialize before cases start
+  -- replacing individual functions.
+  get_clients = require("vim.lsp").get_clients,
+}
 local original_uv = {}
 local original_system = vim.system
 local original_schedule = vim.schedule
@@ -127,7 +138,10 @@ local function prepare_case()
   vim.env.IDF_PATH = nil
   vim.env.IDF_PYTHON_ENV_PATH = nil
   vim.env.IDF_TOOLS_PATH = nil
+  vim.api.nvim_buf_get_name = original_api.nvim_buf_get_name
+  vim.fs.root = original_fs.root
   vim.fn.has = original_fn.has
+  vim.fn.bufnr = original_fn.bufnr
   vim.fn.executable = function()
     return 0
   end
@@ -147,6 +161,7 @@ local function prepare_case()
   vim.fn.readfile = function()
     return {}
   end
+  vim.lsp.get_clients = original_lsp.get_clients
   set_scandir({})
 end
 
@@ -171,6 +186,7 @@ end
 T.hooks = {
   pre_once = function()
     original_fn.has = vim.fn.has
+    original_fn.bufnr = vim.fn.bufnr
     original_fn.executable = vim.fn.executable
     original_fn.system = vim.fn.system
     original_fn.exepath = vim.fn.exepath
@@ -187,7 +203,10 @@ T.hooks = {
     vim.env.IDF_PATH = original_idf_path
     vim.env.IDF_PYTHON_ENV_PATH = original_idf_python_env_path
     vim.env.IDF_TOOLS_PATH = original_idf_tools_path
+    vim.api.nvim_buf_get_name = original_api.nvim_buf_get_name
+    vim.fs.root = original_fs.root
     vim.fn.has = original_fn.has
+    vim.fn.bufnr = original_fn.bufnr
     vim.fn.executable = original_fn.executable
     vim.fn.system = original_fn.system
     vim.fn.exepath = original_fn.exepath
@@ -196,6 +215,7 @@ T.hooks = {
     vim.fn.readfile = original_fn.readfile
     vim.uv.fs_scandir = original_uv.fs_scandir
     vim.uv.fs_scandir_next = original_uv.fs_scandir_next
+    vim.lsp.get_clients = original_lsp.get_clients
     vim.system = original_system
     vim.schedule = original_schedule
   end,
@@ -452,6 +472,7 @@ T["lsp_config() uses build_dir, root markers, and appends clangd_args"] = functi
   local cmd = esp32.clangd_cmd()
 
   expect.equality(type(config.cmd), "function")
+  expect.equality(type(config.root_dir), "function")
   expect.equality(cmd[1], esp32_path)
   expect_truthy(vim.tbl_contains(cmd, "--compile-commands-dir=build.custom"))
   expect_truthy(vim.tbl_contains(cmd, "--function-arg-placeholders=true"))
@@ -460,6 +481,133 @@ T["lsp_config() uses build_dir, root markers, and appends clangd_args"] = functi
   expect.equality(config.root_markers, { "sdkconfig", "CMakeLists.txt" })
   expect_truthy(config.capabilities ~= nil)
   expect.equality(config.capabilities.general.positionEncodings, { "utf-16" })
+end
+
+T["lsp_config() reuses the originating project root for ESP-IDF components"] = function()
+  prepare_case()
+  vim.env.IDF_PATH = "/nix/store/esp-idf-v5.5.2"
+  vim.api.nvim_buf_get_name = function(bufnr)
+    expect.equality(bufnr, 22)
+    return "/nix/store/esp-idf-v5.5.2/components/esp_wifi/src/wifi_init.c"
+  end
+  vim.fn.bufnr = function(name)
+    expect.equality(name, "#")
+    return 11
+  end
+  vim.lsp.get_clients = function(filter)
+    expect.equality(filter, { name = "clangd", bufnr = 11 })
+    return { { root_dir = "/project/blink" } }
+  end
+  vim.fs.root = function()
+    error("component buffers must not resolve their own CMakeLists.txt")
+  end
+
+  local esp32 = load_module()
+  local resolved
+  esp32.lsp_config().root_dir(22, function(root)
+    resolved = root
+  end)
+
+  expect.equality(resolved, "/project/blink")
+  expect_truthy(
+    vim.tbl_contains(
+      esp32.clangd_cmd(resolved, { silent = true }),
+      "--compile-commands-dir=/project/blink/build.clang"
+    )
+  )
+end
+
+T["lsp_config() skips ESP-IDF components without a unique originating client"] = function()
+  prepare_case()
+  vim.env.IDF_PATH = "/opt/esp-idf"
+  vim.api.nvim_buf_get_name = function()
+    return "/opt/esp-idf/components/freertos/FreeRTOS-Kernel/tasks.c"
+  end
+  vim.fs.root = function()
+    error("component buffers must not resolve their own CMakeLists.txt")
+  end
+
+  local esp32 = load_module()
+  local config = esp32.lsp_config()
+  local cases = {
+    { previous = -1 },
+    { previous = 11, clients = {} },
+    {
+      previous = 11,
+      clients = {
+        { root_dir = "/project/one" },
+        { root_dir = "/project/two" },
+      },
+    },
+  }
+
+  for _, case in ipairs(cases) do
+    vim.fn.bufnr = function()
+      return case.previous
+    end
+    vim.lsp.get_clients = function()
+      if not case.clients then
+        error("clients must not be queried without an alternate buffer")
+      end
+      return case.clients
+    end
+
+    local called = false
+    config.root_dir(22, function()
+      called = true
+    end)
+
+    expect.equality(called, false)
+  end
+end
+
+T["lsp_config() leaves ESP-IDF example root detection unchanged"] = function()
+  prepare_case()
+  vim.env.IDF_PATH = "/opt/esp-idf"
+  vim.api.nvim_buf_get_name = function()
+    return "/opt/esp-idf/examples/get-started/blink/main/blink_example_main.c"
+  end
+  vim.lsp.get_clients = function()
+    return {}
+  end
+  vim.fs.root = function(source, markers)
+    expect.equality(source, "/opt/esp-idf/examples/get-started/blink/main/blink_example_main.c")
+    expect.equality(markers, { "sdkconfig", "CMakeLists.txt" })
+    return "/opt/esp-idf/examples/get-started/blink"
+  end
+
+  local esp32 = load_module()
+  local resolved
+  esp32.lsp_config().root_dir(22, function(root)
+    resolved = root
+  end)
+
+  expect.equality(resolved, "/opt/esp-idf/examples/get-started/blink")
+end
+
+T["lsp_config() matches Windows ESP-IDF component paths case-insensitively"] = function()
+  prepare_case()
+  vim.fn.has = function(feature)
+    return feature == "win32" and 1 or 0
+  end
+  vim.env.IDF_PATH = [[C:\Espressif\Frameworks\ESP-IDF-v6.0.2]]
+  vim.api.nvim_buf_get_name = function()
+    return "c:/espressif/frameworks/esp-idf-v6.0.2/components/esp_wifi/src/wifi_init.c"
+  end
+  vim.fn.bufnr = function()
+    return 11
+  end
+  vim.lsp.get_clients = function()
+    return { { root_dir = "C:/projects/blink" } }
+  end
+
+  local esp32 = load_module()
+  local resolved
+  esp32.lsp_config().root_dir(22, function(root)
+    resolved = root
+  end)
+
+  expect.equality(resolved, "C:/projects/blink")
 end
 
 T["clangd_cmd() falls back to system clangd and warns when esp clangd is missing"] = function()

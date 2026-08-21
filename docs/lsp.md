@@ -84,6 +84,11 @@ This is useful for an ESP-IDF project nested inside a monorepo. Use `:ESPInfo`
 and `:checkhealth vim.lsp` to verify the resolved root if commands affect the
 wrong directory.
 
+When go-to-definition opens framework source below `$IDF_PATH/components`, the
+plugin reuses the clangd client from the originating project. This keeps the
+framework buffer on the application's compilation database instead of treating
+the component's own `CMakeLists.txt` as a separate project root.
+
 ## Other C and C++ projects
 
 The snippets above replace the enabled `clangd` configuration with the

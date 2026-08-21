@@ -268,6 +268,46 @@ end
 --- Root markers of an ESP-IDF project, most specific first
 local root_markers = { "sdkconfig", "CMakeLists.txt" }
 
+--- Whether a buffer belongs to the framework components of the active ESP-IDF
+---
+--- Files there are part of the current application's compilation database, but
+--- each component has its own CMakeLists.txt. Treating that file as a project
+--- marker would start a second clangd with a nonexistent component-local build
+--- directory.
+local function is_idf_component_buffer(bufnr)
+  if not vim.env.IDF_PATH or vim.env.IDF_PATH == "" then
+    return false
+  end
+
+  local name = vim.api.nvim_buf_get_name(bufnr)
+  if name == "" then
+    return false
+  end
+
+  local components = vim.fs.normalize(join_path(vim.env.IDF_PATH, "components"))
+  name = vim.fs.normalize(name)
+
+  if is_windows() then
+    components = components:lower()
+    name = name:lower()
+  end
+
+  return name:sub(1, #components + 1) == components .. "/"
+end
+
+--- Resolve the project client which led into an ESP-IDF component buffer
+local function previous_clangd_root()
+  local previous = vim.fn.bufnr("#")
+  if previous < 1 then
+    return nil
+  end
+
+  local clients = vim.lsp.get_clients({ name = "clangd", bufnr = previous })
+  if #clients == 1 then
+    return clients[1].root_dir
+  end
+end
+
 --- Resolve the ESP-IDF project a buffer belongs to
 ---
 --- Prefers the root an attached clangd resolved, so commands act on the same
@@ -860,8 +900,24 @@ function M.lsp_config()
         detached = config and config.detached,
       })
     end,
+    -- Framework component sources belong to the application which opened
+    -- them. Reuse that client's root instead of treating the component's own
+    -- CMakeLists.txt as another project. Without an originating client, skip
+    -- activation rather than start clangd with a bogus component build dir.
+    root_dir = function(bufnr, on_dir)
+      if is_idf_component_buffer(bufnr) then
+        local root = previous_clangd_root()
+        if root then
+          on_dir(root)
+        end
+        return
+      end
+
+      on_dir(M.project_root(bufnr))
+    end,
     -- Prefer the ESP-IDF project root and avoid falling back to a parent git
-    -- repository, which breaks nested projects/monorepos.
+    -- repository, which breaks nested projects/monorepos. Kept inspectable and
+    -- used by project_root() for ordinary buffers.
     root_markers = root_markers,
     capabilities = make_clangd_capabilities(),
     init_options = {
