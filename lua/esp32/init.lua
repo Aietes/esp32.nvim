@@ -194,26 +194,36 @@ function M.find_esp_clangd()
   end
 
   for _, tools_dir in ipairs(idf_tools_dirs()) do
-    local base = join_path(tools_dir, "esp-clang")
-    local scandir = vim.uv.fs_scandir(base)
-    if scandir then
-      local latest
-      local latest_key
-      while true do
-        local name = vim.uv.fs_scandir_next(scandir)
-        if not name then
-          break
-        end
-        if name:match("^esp%-.+") then
-          local candidate = join_path(base, name, "esp-clang", "bin", "clangd")
-          if vim.fn.executable(candidate) == 1 and (not latest_key or name > latest_key) then
-            latest = candidate
-            latest_key = name
+    local clangd_paths = {}
+    -- From ESP-IDFv6.1 onwards esp-clangd binary has been moved to esp-clangd dir
+    table.insert(clangd_paths, join_path(tools_dir, "esp-clang"))
+    table.insert(clangd_paths, join_path(tools_dir, "esp-clangd"))
+
+    for _, base in ipairs(clangd_paths) do
+      local scandir = vim.uv.fs_scandir(base)
+      if scandir then
+        local latest
+        local latest_key
+        while true do
+          local name = vim.uv.fs_scandir_next(scandir)
+          if not name then
+            break
+          end
+          if name:match("^esp%-.+") then
+            local candidates = {}
+            table.insert(candidates, join_path(base, name, "esp-clang", "bin", "clangd"))
+            table.insert(candidates, join_path(base, name, "esp-clangd", "bin", "clangd"))
+            for _, candidate in ipairs(candidates) do
+              if vim.fn.executable(candidate) == 1 and (not latest_key or name > latest_key) then
+                latest = candidate
+                latest_key = name
+              end
+            end
           end
         end
-      end
-      if latest then
-        return latest
+        if latest then
+          return latest
+        end
       end
     end
   end
@@ -512,8 +522,8 @@ function M.ensure_compile_commands(root)
     -- enough on its own: the server has to be started again.
     vim.notify(
       "[ESP32] ⚠️ Missing compile_commands.json in " .. path
-        .. "\nclangd has already discarded the build directory for this session."
-        .. "\nRun :ESPReconfigure, which regenerates it and restarts clangd.",
+      .. "\nclangd has already discarded the build directory for this session."
+      .. "\nRun :ESPReconfigure, which regenerates it and restarts clangd.",
       vim.log.levels.WARN
     )
     return
@@ -522,8 +532,8 @@ function M.ensure_compile_commands(root)
   if M.compile_commands_toolchain(root) == "gcc" then
     vim.notify(
       "[ESP32] ⚠️ " .. path .. " was generated for the GCC toolchain."
-        .. "\nclangd will report unknown arguments and missing headers."
-        .. "\nRun :ESPReconfigure to regenerate it with IDF_TOOLCHAIN=clang.",
+      .. "\nclangd will report unknown arguments and missing headers."
+      .. "\nRun :ESPReconfigure to regenerate it with IDF_TOOLCHAIN=clang.",
       vim.log.levels.WARN
     )
   end
