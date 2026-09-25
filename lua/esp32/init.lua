@@ -193,27 +193,34 @@ function M.find_esp_clangd()
     end
   end
 
+  -- ESP-IDF v6.1 ships clangd as its own esp-clangd tool; older releases
+  -- bundle it with esp-clang. Prefer esp-clangd so a leftover esp-clang
+  -- from an earlier release does not shadow the newer clangd.
+  local tools = { "esp-clangd", "esp-clang" }
+
   for _, tools_dir in ipairs(idf_tools_dirs()) do
-    local base = join_path(tools_dir, "esp-clang")
-    local scandir = vim.uv.fs_scandir(base)
-    if scandir then
-      local latest
-      local latest_key
-      while true do
-        local name = vim.uv.fs_scandir_next(scandir)
-        if not name then
-          break
-        end
-        if name:match("^esp%-.+") then
-          local candidate = join_path(base, name, "esp-clang", "bin", "clangd")
-          if vim.fn.executable(candidate) == 1 and (not latest_key or name > latest_key) then
-            latest = candidate
-            latest_key = name
+    for _, tool in ipairs(tools) do
+      local base = join_path(tools_dir, tool)
+      local scandir = vim.uv.fs_scandir(base)
+      if scandir then
+        local latest
+        local latest_key
+        while true do
+          local name = vim.uv.fs_scandir_next(scandir)
+          if not name then
+            break
+          end
+          if name:match("^esp%-.+") then
+            local candidate = join_path(base, name, tool, "bin", "clangd")
+            if vim.fn.executable(candidate) == 1 and (not latest_key or name > latest_key) then
+              latest = candidate
+              latest_key = name
+            end
           end
         end
-      end
-      if latest then
-        return latest
+        if latest then
+          return latest
+        end
       end
     end
   end

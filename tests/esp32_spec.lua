@@ -283,6 +283,61 @@ T["find_esp_clangd() picks the newest installed Espressif clangd"] = function()
   vim.env.HOME = previous_home
 end
 
+T["find_esp_clangd() finds the standalone esp-clangd tool from ESP-IDF v6.1"] = function()
+  prepare_case()
+  vim.env.IDF_TOOLS_PATH = "/custom/espressif/tools"
+
+  set_scandir({
+    ["/custom/espressif/tools/esp-clangd"] = {
+      "esp-21.1.3_20260408",
+    },
+  })
+
+  vim.fn.executable = function(path)
+    if path == "clangd" then
+      return 0
+    end
+    return 1
+  end
+
+  local esp32 = load_module()
+  reset_plugin_state(esp32)
+
+  expect.equality(
+    esp32.find_esp_clangd(),
+    "/custom/espressif/tools/esp-clangd/esp-21.1.3_20260408/esp-clangd/bin/clangd"
+  )
+end
+
+T["find_esp_clangd() prefers esp-clangd over a leftover esp-clang"] = function()
+  prepare_case()
+  vim.env.IDF_TOOLS_PATH = "/custom/espressif/tools"
+
+  set_scandir({
+    ["/custom/espressif/tools/esp-clang"] = {
+      "esp-20.1.1_20250829",
+    },
+    ["/custom/espressif/tools/esp-clangd"] = {
+      "esp-21.1.3_20260408",
+    },
+  })
+
+  vim.fn.executable = function(path)
+    if path == "clangd" then
+      return 0
+    end
+    return 1
+  end
+
+  local esp32 = load_module()
+  reset_plugin_state(esp32)
+
+  expect.equality(
+    esp32.find_esp_clangd(),
+    "/custom/espressif/tools/esp-clangd/esp-21.1.3_20260408/esp-clangd/bin/clangd"
+  )
+end
+
 T["find_esp_clangd() honors IDF_TOOLS_PATH"] = function()
   prepare_case()
   vim.env.IDF_TOOLS_PATH = "/custom/espressif/tools"
