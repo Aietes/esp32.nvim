@@ -47,8 +47,12 @@ The plugin searches for Espressif's clangd in this order:
 
 1. `clangd` on `PATH`, if `clangd --version` identifies an Espressif build
 2. `IDF_TOOLS_PATH`, supporting EIM and classic ESP-IDF layouts
-3. `~/.espressif/tools/esp-clang`
-4. `C:\Espressif\tools\esp-clang` on Windows
+3. `~/.espressif/tools`
+4. `C:\Espressif\tools` on Windows
+
+In each tools directory it checks `esp-clangd` first, the standalone clangd
+tool in ESP-IDF v6.1 and later, then `esp-clang`, which bundles clangd in
+earlier releases. Within a tool it uses the newest installed version.
 
 If it cannot find Espressif's build when the server starts, it warns and falls
 back to `clangd` on `PATH`. `:ESPInfo` reports the exact command without
